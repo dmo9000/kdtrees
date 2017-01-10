@@ -4,6 +4,8 @@ struct _region {
     int y1;
     int x2;
     int y2;
+		int w;
+		int h;
 };
 
 typedef struct _region Region;

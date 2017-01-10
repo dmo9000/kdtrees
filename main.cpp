@@ -2,6 +2,7 @@
 #include <vector>
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 #include "Extent.h"
 #include "string.h"
 #include "math.h"
@@ -16,40 +17,138 @@ std::vector <Extent*> extentsH;
 std::vector <Extent*> extentsV;
 std::vector <Extent*> extentsOut;
 
+std::vector <Extent*> RegionList;
+
 void dump_stack();
-void process_stack();
-void write_png_file(char *);
+void process_stack(int reg_xmin, int reg_ymin, int reg_dev);
 int png_setpixel(int, int, unsigned char, unsigned char, unsigned int);
 int png_drawline(int x1, int y1, int x2, int y2, unsigned char r, unsigned char g, unsigned char b);
 int png_drawbox(int x1, int y1,int x2, int y2, int r, int g, int b);
 int png_fillbox(int x1, int y1,int x2, int y2, int r, int g, int b);
-
-png_byte color_type;
-png_byte bit_depth;
+bool write_png_file(char *filename) ;
+void generate_png_data(bool fill);
 png_bytep *row_pointers;
+
 
 int main(int argc, char *argv[])
 {
 
+    if (argc < 7) {
+        printf("usage: ./main.cpp <reg_xmin> <reg_ymin> <reg_dev> <clu_xmin> <clu_ymin> <clu_dev>\n");
+        exit(1);
+    }
+
+    int reg_xmin = atoi(argv[1]);
+    int reg_ymin = atoi(argv[2]);
+    int reg_dev  = atoi(argv[3]);
+		int clu_xmin = atoi(argv[4]);
+		int clu_ymin = atoi(argv[5]);
+		int clu_dev  = atoi(argv[6]);
+		int seed = 0;
+		/* optional, otherwise we get it from srand(time(NULL)) which seeds it from the current offset from epoch */;
+		if (argc == 8) {
+			seed = atoi(argv[7]);			
+			}
+
+    if ((reg_xmin < 20 || reg_xmin > DIM_X) ||
+            (reg_xmin < 20 || reg_xmin > DIM_X)) {
+        printf("reg_xmin/reg_ymin out of bounds\n");
+        exit (1);
+    }
+
+    if (reg_dev < 0 || reg_dev > 50) {
+        printf("reg_dev must be between 0 and 50\n");
+        exit(1);
+    }
+
+    if ((clu_xmin < 3 || clu_xmin > DIM_X) ||
+            (clu_xmin < 3 || clu_xmin > DIM_X)) {
+        printf("clu_xmin/clu_ymin out of bounds\n");
+        exit (1);
+    }
+
+    if (clu_dev < 0 || clu_dev > 50) {
+        printf("clu_dev must be between 0 and 50\n");
+        exit(1);
+    }
+
     /* we use a vector here with push_back()/pop_back(), as std::stack doesn't have
      * an iterator */
 
-    printf("Seeding random number generator ...");
-    srand(time(NULL));
+    printf("Seeding random number generator ...\n");
+		if (seed == 0) {
+	    srand(time(NULL));
+			} else {
+			srand(seed);
+			}
+
+    /* initialize PNG output buffer */
+
+    row_pointers = (png_bytep*)malloc(sizeof(png_bytep) * DIM_Y);
+    for(int y = 0; y < DIM_Y; y++) {
+        row_pointers[y] = (png_byte*)malloc(DIM_X*4);
+        memset(row_pointers[y], 0xff, DIM_X*4);
+    }
+
+    /* create the master block and push it */
 
     printf("Creating initial map extent ...\n");
     extentsH.push_back(new Extent(0,0, DIM_X, DIM_Y));
 
     while (extentsH.size() || extentsV.size()) {
-        process_stack();
+        process_stack(reg_xmin, reg_ymin, reg_dev);
     }
     printf("Queues have drained.\n");
     dump_stack();
+
+    row_pointers = (png_bytep*)malloc(sizeof(png_bytep) * DIM_Y);
+    for(int y = 0; y < DIM_Y; y++) {
+        row_pointers[y] = (png_byte*)malloc(DIM_X*4);
+        memset(row_pointers[y], 0xff, DIM_X*4);
+    }
+    printf("allocated row pointers\n");
+
+    generate_png_data(true);
+
+    RegionList = extentsOut;
+
+    extentsH.clear();
+    extentsV.clear();
+    extentsOut.clear();
+
+    printf("extentsH contains: %d regions\n", extentsH.size());
+    printf("extentsV contains: %d regions\n", extentsV.size());
+    printf("extentsOut contains: %d regions\n", extentsOut.size());
+    printf("RegionList contains: %d regions\n", RegionList.size());
+
+    std::vector<Extent*>::iterator it;
+
+    int ri = 0;
+
+    for(it=RegionList.begin() ; it < RegionList.end(); it++ ) {
+        Extent *myExtent = *it;
+        printf("Subdividing region #%d ...\n", ri);
+        Region *r = myExtent->GetRegion();
+        extentsH.push_back(new Extent(r->x1, r->y1, r->w, r->h));
+
+        while (extentsH.size() || extentsV.size()) {
+            process_stack(clu_xmin, clu_ymin, clu_dev);
+        }
+        printf("Queues have drained.\n");
+        dump_stack();
+        generate_png_data(false);
+
+        /* increment region index */
+        ri++;
+    }
+
     write_png_file("extents.png");
+
+
 }
 
 
-void process_stack()
+void process_stack(int reg_xmin, int reg_ymin, int reg_dev)
 {
 
     bool cansplit = false;
@@ -57,53 +156,55 @@ void process_stack()
     while (extentsH.size()) {
         Extent *current = extentsH.back();
         extentsH.pop_back();
-        printf("process_stack(): processing horizontal split:\n");
+//        printf("process_stack(): processing horizontal split:\n");
         current->Display();
-        cansplit = current->CanSplitAny(MIN_X, MIN_Y);
+        cansplit = current->CanSplitAny(reg_xmin, reg_ymin);
         if (!cansplit) {
-            printf("Encountered unsplittable block - pushing to output queue.\n");
-            exit (1);
+            //    printf("Encountered unsplittable block - pushing to output queue.\n");
+            extentsOut.push_back(current);
+            return;
         }
-        cansplit = current->CanSplit(SPLIT_HORIZONTAL, MIN_Y);
+        cansplit = current->CanSplit(SPLIT_HORIZONTAL, reg_xmin, reg_ymin);
         if (cansplit) {
-            printf("Block can be split horizontally\n");
-            if (!current->SplitHorizontal(MIN_Y)) {
-                printf("Block refused to split. Putting on output queue.\n");
+            //     printf("Block can be split horizontally\n");
+            if (!current->SplitHorizontal(reg_ymin, reg_dev)) {
+                //          printf("Block refused to split. Putting on output queue.\n");
                 extentsOut.push_back(current);
             } else {
                 /* block was split into two new ones, so delete it */
                 delete current;
             }
         } else {
-            printf("Cannot be split horizontally. Pushing to vertical queue.\n");
+//           printf("Cannot be split horizontally. Pushing to vertical queue.\n");
             /* push to the vertical split queue */
             extentsV.push_back(current);
         }
     }
-    printf("Horizontal split queue is now empty.\n");
+//    printf("Horizontal split queue is now empty.\n");
 
     while (extentsV.size()) {
         Extent *current = extentsV.back();
         extentsV.pop_back();
-        printf("process_stack(): processing vertical split:\n");
+        //      printf("process_stack(): processing vertical split:\n");
         current->Display();
-        cansplit = current->CanSplitAny(MIN_X, MIN_Y);
+        cansplit = current->CanSplitAny(reg_xmin, reg_ymin);
         if (!cansplit) {
-            printf("Encountered unsplittable block. Pushing to output queue.\n");
-            exit (1);
+//            printf("Encountered unsplittable block. Pushing to output queue.\n");
+            extentsOut.push_back(current);
+            return;
         }
-        cansplit = current->CanSplit(SPLIT_VERTICAL, MIN_X);
+        cansplit = current->CanSplit(SPLIT_VERTICAL, reg_xmin, reg_ymin);
         if (cansplit) {
-            printf("Block can be split vertically.\n");
-            if (!current->SplitVertical(MIN_X)) {
-                printf("Block refused to split. Putting on output queue.\n");
+//            printf("Block can be split vertically.\n");
+            if (!current->SplitVertical(reg_xmin, reg_dev)) {
+//                printf("Block refused to split. Putting on output queue.\n");
                 extentsOut.push_back(current);
             } else {
                 /* block was split into two new ones, so delete it */
                 delete current;
             }
         } else {
-            printf("Cannot be split vertically.\n");
+//            printf("Cannot be split vertically.\n");
             /* push to the horizontal split queue */
             extentsH.push_back(current);
             /* block no longer exists, two new ones have been created on other list, so delete it */
@@ -111,7 +212,7 @@ void process_stack()
         }
     }
 
-    printf("Vertical split queue is now empty.\n");
+//    printf("Vertical split queue is now empty.\n");
 
     return;
 }
@@ -121,8 +222,7 @@ void dump_stack()
 {
 
     printf("---------------------------------------------------------------\n");
-    printf("Output Stack now contains %d items\n", extentsOut.size());
-    printf("Extents remaining on the stack at completion:\n");
+    printf("Output Stack contains %d items\n", extentsOut.size());
     printf("---------------------------------------------------------------\n");
 
     std::vector<Extent*>::iterator it;
@@ -134,48 +234,69 @@ void dump_stack()
     printf("---------------------------------------------------------------\n");
 }
 
-void write_png_file(char *filename) {
-    int y;
-    int width = DIM_X;
-    int height = DIM_Y;
 
-
-    FILE *fp = fopen(filename, "wb");
-    if(!fp) abort();
-
-    png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
-    if (!png) abort();
-
-    png_infop info = png_create_info_struct(png);
-    if (!info) abort();
-
-    row_pointers = (png_bytep*)malloc(sizeof(png_bytep) * height);
-    for(int y = 0; y < height; y++) {
-        row_pointers[y] = (png_byte*)malloc(width*4);
-        memset(row_pointers[y], 0xff, width*4);
-
-    }
-
+void generate_png_data(bool fillboxes)
+{
+    printf("generate_png_data()\n");
+    int cr, cg, cb;
     int region_count = extentsOut.size();
     float shaderstep = 200 / region_count;
     int region_index = 0;
-    std::vector<Extent*>::iterator it;  
+    std::vector<Extent*>::iterator it;
     for(it=extentsOut.begin() ; it < extentsOut.end(); it++ ) {
         Extent *myExtent = *it;
         Region *r = myExtent->GetRegion();
 
         int blueindex = (int) 50 + (int) (region_index * shaderstep);
 
-        if (r) { 
-            png_fillbox(r->x1, r->y1, r->x2, r->y2, 0, 0, blueindex);
+        if (r) {
+            if (fillboxes) {
+                if (extentsOut.size() ==1) {
+                    cr = 255;
+                    cg = 255;
+                    cb = 255;
+                } else {
+                    cr = (rand() % 150)+50;
+                    cg = (rand() % 150)+50;
+                    cb = (rand() % 150)+50;
+                }
+
+                png_fillbox(r->x1, r->y1, r->x2, r->y2, cr, cg, cb);
+            }
             png_drawbox(r->x1, r->y1, r->x2, r->y2, 0, 0, 0);
-            free(r);
+            //free(r);
         } else {
             printf("Did not get region data during output.\n");
             exit(1);
         }
         region_index++;
     }
+    printf("generate_png_data() ok\n");
+    return;
+}
+
+
+bool write_png_file(char *filename)
+{
+    png_byte color_type;
+    png_byte bit_depth;
+    png_structp png;
+    png_infop info;
+
+    printf("open_png_file(%s)\n", filename);
+
+    FILE *fp = fopen(filename, "wb");
+    if(!fp) abort();
+
+    printf("open_png_file() ok\n");
+
+
+    png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+    if (!png) abort();
+    info = png_create_info_struct(png);
+    if (!info) abort();
+    printf("open_png_file() ok\n");
+
 
     if (setjmp(png_jmpbuf(png))) abort();
     png_init_io(png, fp);
@@ -183,7 +304,7 @@ void write_png_file(char *filename) {
     png_set_IHDR(
         png,
         info,
-        width, height,
+        DIM_X, DIM_Y,
         8,
         PNG_COLOR_TYPE_RGBA,
         PNG_INTERLACE_NONE,
@@ -191,11 +312,12 @@ void write_png_file(char *filename) {
         PNG_FILTER_TYPE_DEFAULT
     );
 
+
     png_write_info(png, info);
     png_write_image(png, row_pointers);
     png_write_end(png, NULL);
 
-    for(int y = 0; y < height; y++) {
+    for(int y = 0; y < DIM_Y; y++) {
         free(row_pointers[y]);
     }
     free(row_pointers);
@@ -300,7 +422,6 @@ int png_setpixel(int x, int y, unsigned char r, unsigned char g, unsigned int b)
 
     if (x < 0 || x >= DIM_X) return 0;
     if (y < 0 || y >= DIM_Y) return 0;
-
     unsigned char* pixoffset = row_pointers[y];
     pixoffset += x * 4;
     *pixoffset = r;
@@ -313,7 +434,6 @@ int png_setpixel(int x, int y, unsigned char r, unsigned char g, unsigned int b)
 
 int png_drawbox(int x1, int y1,int x2, int y2, int r, int g, int b)
 {
-
     png_drawline(x1, y1, x2, y1, r, g, b);
     png_drawline(x2, y1, x2, y2, r, g, b);
     png_drawline(x2, y2, x1, y2, r, g, b);
@@ -324,7 +444,7 @@ int png_drawbox(int x1, int y1,int x2, int y2, int r, int g, int b)
 int png_fillbox(int x1, int y1,int x2, int y2, int r, int g, int b)
 {
 
-    printf("png_fillbox(%d, %d, %d, %d, %d, %d, %d)\n", x1, y1, x2, y2, r, g, b);
+    // printf("png_fillbox(%d, %d, %d, %d, %d, %d, %d)\n", x1, y1, x2, y2, r, g, b);
     for (int i = y1; i < y2; i++) {
         png_drawline(x1, i, x2, i, r, g, b);
     }

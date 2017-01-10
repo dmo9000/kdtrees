@@ -17,10 +17,10 @@ class Extent {
 		Extent(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
 		~Extent();
 		void Display();
-		bool CanSplit(uint32_t sm, uint32_t minsize); 
+		bool CanSplit(uint32_t sm, uint32_t minxsize, uint32_t minysize); 
 		bool CanSplitAny(uint32_t minx, uint32_t miny);
-		bool SplitHorizontal(uint32_t miny);
-		bool SplitVertical(uint32_t minx);
+		bool SplitHorizontal(uint32_t miny, float generosity);
+		bool SplitVertical(uint32_t minx, float generosity);
 		Region *GetRegion();
 
     };

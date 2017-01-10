@@ -12,7 +12,7 @@ int clip(int n, int lower, int upper);
 
 Extent::Extent(uint32_t ix, uint32_t iy, uint32_t iw, uint32_t ih)
 {
-    printf("-> Create_Extent(%d, %d, %d, %d)\n", ix, iy, iw, ih);
+//    printf("-> Create_Extent(%d, %d, %d, %d)\n", ix, iy, iw, ih);
     x = ix;
     y = iy;
     h = ih;
@@ -22,14 +22,14 @@ Extent::Extent(uint32_t ix, uint32_t iy, uint32_t iw, uint32_t ih)
 
 Extent::~Extent()
 {
-    printf(" -> Delete_Extent(%d, %d, %d, %d)\n", x, y, w, h);
+  //  printf(" -> Delete_Extent(%d, %d, %d, %d)\n", x, y, w, h);
 
 }
 
 void Extent::Display()
 {
 
-    printf("(%u, %u, %u, %u)\n", x, y, w, h);
+    //printf("(%u, %u, %u, %u)\n", x, y, w, h);
 
 }
 
@@ -40,17 +40,17 @@ uint32_t Extent::GetSplitMode()
 }
 */
 
-bool Extent::CanSplit(uint32_t splitmode, uint32_t min_size)
+bool Extent::CanSplit(uint32_t splitmode, uint32_t reg_xmin, uint32_t reg_ymin)
 {
 
     switch (splitmode) {
     case SPLIT_HORIZONTAL:
-        if (h > min_size) {
+        if (h > reg_ymin) {
             return true;
         }
         break;
     case SPLIT_VERTICAL:
-        if (w > min_size) {
+        if (w > reg_xmin) {
             return true;
         }
         break;
@@ -67,11 +67,10 @@ bool Extent::CanSplitAny(uint32_t minx, uint32_t miny)
 {
     if (minx < w) return true;
     if (miny < h) return true;
-
     return false;
 }
 
-bool Extent::SplitHorizontal(uint32_t miny)
+bool Extent::SplitHorizontal(uint32_t miny, float generosity)
 {
     /* cannot be split */
 
@@ -82,8 +81,11 @@ bool Extent::SplitHorizontal(uint32_t miny)
 
     if (miny >= h) return false;
 
-    int budget = h / 5;
-    int segment_adjustment = (rand() % budget) - (h / 10);
+	  int budget = (int) (((float) (generosity / 100.0)) * ((float) h));
+//		printf("generosity = %.02f%%, budget = %d\n", generosity, budget);
+
+		/* prevent crash here due to potential call to rand(0) */
+    int segment_adjustment = (budget ? ((rand() % budget) - (budget / 2)) : 0);
     h1 = (h / 2) + segment_adjustment;
     h2 = h - h1;
 
@@ -97,7 +99,7 @@ bool Extent::SplitHorizontal(uint32_t miny)
 
 }
 
-bool Extent::SplitVertical(uint32_t minx)
+bool Extent::SplitVertical(uint32_t minx, float generosity)
 {
     /* cannot be split */
 
@@ -108,8 +110,10 @@ bool Extent::SplitVertical(uint32_t minx)
 
     if (minx >= w) return false;
 
-    int budget = w / 5;
-    int segment_adjustment = (rand() % budget) - (w / 10);
+	  int budget = (int) (((float) (generosity / 100.0)) * ((float) h));
+//		printf("generosity = %.02f%%, budget = %d\n", generosity, budget);
+  /* prevent crash here due to potential call to rand(0) */
+    int segment_adjustment = (budget ? ((rand() % budget) - (budget / 2)) : 0);
 
     w1 = (w / 2) + segment_adjustment;
     w2 = w - w1;
@@ -136,5 +140,7 @@ Region* Extent::GetRegion()
     r->y1 = clip(y, 0, DIM_Y - 1);
     r->x2 = clip(x + w, 0,  DIM_X - 1);
     r->y2 = clip(y + h, 0, DIM_Y - 1);
+		r->w = w;
+		r->h = h;
     return r;
 }
