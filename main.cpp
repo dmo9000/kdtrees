@@ -16,17 +16,22 @@
 std::vector <Extent*> extentsH;
 std::vector <Extent*> extentsV;
 std::vector <Extent*> extentsOut;
-
 std::vector <Extent*> RegionList;
 
 void dump_stack();
 void process_stack(int reg_xmin, int reg_ymin, int reg_dev);
-int png_setpixel(int, int, unsigned char, unsigned char, unsigned int);
+int png_setpixel(int, int, unsigned char, unsigned char, unsigned int, int scale);
 int png_drawline(int x1, int y1, int x2, int y2, unsigned char r, unsigned char g, unsigned char b);
 int png_drawbox(int x1, int y1,int x2, int y2, int r, int g, int b);
 int png_fillbox(int x1, int y1,int x2, int y2, int r, int g, int b);
-bool write_png_file(char *filename) ;
-void generate_png_data(bool fill);
+
+int scale_setpixel(int, int, unsigned char, unsigned char, unsigned int, int scale);
+int scale_drawline(int x1, int y1, int x2, int y2, unsigned char r, unsigned char g, unsigned char b, int scale);
+int scale_drawbox(int x1, int y1,int x2, int y2, int r, int g, int b, int scale);
+int scale_fillbox(int x1, int y1,int x2, int y2, int r, int g, int b, int scale);
+
+bool write_png_file(char *filename, int scale);
+void generate_png_data(bool fill, int scale);
 png_bytep *row_pointers;
 
 
@@ -45,9 +50,14 @@ int main(int argc, char *argv[])
 		int clu_ymin = atoi(argv[5]);
 		int clu_dev  = atoi(argv[6]);
 		int seed = 0;
+		int scale = 3;
 		/* optional, otherwise we get it from srand(time(NULL)) which seeds it from the current offset from epoch */;
 		if (argc == 8) {
 			seed = atoi(argv[7]);			
+			}
+
+		if (argc == 9) {
+			scale = atoi(argv[8]);			
 			}
 
     if ((reg_xmin < 20 || reg_xmin > DIM_X) ||
@@ -84,10 +94,10 @@ int main(int argc, char *argv[])
 
     /* initialize PNG output buffer */
 
-    row_pointers = (png_bytep*)malloc(sizeof(png_bytep) * DIM_Y);
-    for(int y = 0; y < DIM_Y; y++) {
-        row_pointers[y] = (png_byte*)malloc(DIM_X*4);
-        memset(row_pointers[y], 0xff, DIM_X*4);
+    row_pointers = (png_bytep*)malloc(sizeof(png_bytep) * (DIM_Y*scale));
+    for(int y = 0; y < (DIM_Y*scale); y++) {
+        row_pointers[y] = (png_byte*)malloc((DIM_X*scale)*4);
+        memset(row_pointers[y], 0xff, (DIM_X*scale)*4);
     }
 
     /* create the master block and push it */
@@ -101,14 +111,9 @@ int main(int argc, char *argv[])
     printf("Queues have drained.\n");
     dump_stack();
 
-    row_pointers = (png_bytep*)malloc(sizeof(png_bytep) * DIM_Y);
-    for(int y = 0; y < DIM_Y; y++) {
-        row_pointers[y] = (png_byte*)malloc(DIM_X*4);
-        memset(row_pointers[y], 0xff, DIM_X*4);
-    }
-    printf("allocated row pointers\n");
+ 
 
-    generate_png_data(true);
+    generate_png_data(true, scale);
 
     RegionList = extentsOut;
 
@@ -136,13 +141,13 @@ int main(int argc, char *argv[])
         }
         printf("Queues have drained.\n");
         dump_stack();
-        generate_png_data(false);
+        generate_png_data(false, scale);
 
         /* increment region index */
         ri++;
     }
 
-    write_png_file("extents.png");
+    write_png_file((char *) "extents.png", scale);
 
 
 }
@@ -235,19 +240,16 @@ void dump_stack()
 }
 
 
-void generate_png_data(bool fillboxes)
+void generate_png_data(bool fillboxes, int scale)
 {
     printf("generate_png_data()\n");
     int cr, cg, cb;
     int region_count = extentsOut.size();
-    float shaderstep = 200 / region_count;
     int region_index = 0;
     std::vector<Extent*>::iterator it;
     for(it=extentsOut.begin() ; it < extentsOut.end(); it++ ) {
         Extent *myExtent = *it;
         Region *r = myExtent->GetRegion();
-
-        int blueindex = (int) 50 + (int) (region_index * shaderstep);
 
         if (r) {
             if (fillboxes) {
@@ -261,9 +263,9 @@ void generate_png_data(bool fillboxes)
                     cb = (rand() % 150)+50;
                 }
 
-                png_fillbox(r->x1, r->y1, r->x2, r->y2, cr, cg, cb);
+                scale_fillbox(r->x1, r->y1, r->x2, r->y2, cr, cg, cb, scale);
             }
-            png_drawbox(r->x1, r->y1, r->x2, r->y2, 0, 0, 0);
+            scale_drawbox(r->x1, r->y1, r->x2, r->y2, 0, 0, 0, scale);
             //free(r);
         } else {
             printf("Did not get region data during output.\n");
@@ -276,7 +278,7 @@ void generate_png_data(bool fillboxes)
 }
 
 
-bool write_png_file(char *filename)
+bool write_png_file(char *filename, int scale)
 {
     png_byte color_type;
     png_byte bit_depth;
@@ -304,7 +306,7 @@ bool write_png_file(char *filename)
     png_set_IHDR(
         png,
         info,
-        DIM_X, DIM_Y,
+        scale * DIM_X, scale * DIM_Y,
         8,
         PNG_COLOR_TYPE_RGBA,
         PNG_INTERLACE_NONE,
@@ -317,7 +319,7 @@ bool write_png_file(char *filename)
     png_write_image(png, row_pointers);
     png_write_end(png, NULL);
 
-    for(int y = 0; y < DIM_Y; y++) {
+    for(int y = 0; y < (scale * DIM_Y); y++) {
         free(row_pointers[y]);
     }
     free(row_pointers);
@@ -326,7 +328,7 @@ bool write_png_file(char *filename)
 }
 
 
-int png_drawline(int x1, int y1, int x2, int y2, unsigned char r, unsigned char g, unsigned char b)
+int png_drawline(int x1, int y1, int x2, int y2, unsigned char r, unsigned char g, unsigned char b, int scale)
 {
     {
         int x,y,dx,dy,dx1,dy1,px,py,xe,ye,i;
@@ -350,7 +352,7 @@ int png_drawline(int x1, int y1, int x2, int y2, unsigned char r, unsigned char 
                 y=y2;
                 xe=x1;
             }
-            png_setpixel(x,y,r,g,b);
+            png_setpixel(x,y,r,g,b, scale);
             for(i=0; x<xe; i++)
             {
                 x=x+1;
@@ -371,7 +373,7 @@ int png_drawline(int x1, int y1, int x2, int y2, unsigned char r, unsigned char 
                     px=px+2*(dy1-dx1);
                 }
 
-                png_setpixel(x,y,r,g,b);
+                png_setpixel(x,y,r,g,b, scale);
             }
         }
         else
@@ -388,7 +390,7 @@ int png_drawline(int x1, int y1, int x2, int y2, unsigned char r, unsigned char 
                 y=y2;
                 ye=y1;
             }
-            png_setpixel(x,y,r, g, b);
+            png_setpixel(x,y,r, g, b, scale);
             for(i=0; y<ye; i++)
             {
                 y=y+1;
@@ -408,20 +410,18 @@ int png_drawline(int x1, int y1, int x2, int y2, unsigned char r, unsigned char 
                     }
                     py=py+2*(dx1-dy1);
                 }
-
-                png_setpixel(x,y,r,g,b);
+                png_setpixel(x,y,r,g,b, scale);
             }
         }
     }
-
-
 }
 
-int png_setpixel(int x, int y, unsigned char r, unsigned char g, unsigned int b)
+
+int png_setpixel(int x, int y, unsigned char r, unsigned char g, unsigned int b, int scale)
 {
 
-    if (x < 0 || x >= DIM_X) return 0;
-    if (y < 0 || y >= DIM_Y) return 0;
+    if (x < 0 || x >= (scale * DIM_X)) return 0;
+    if (y < 0 || y >= (scale * DIM_Y)) return 0;
     unsigned char* pixoffset = row_pointers[y];
     pixoffset += x * 4;
     *pixoffset = r;
@@ -432,23 +432,140 @@ int png_setpixel(int x, int y, unsigned char r, unsigned char g, unsigned int b)
     return 0;
 }
 
-int png_drawbox(int x1, int y1,int x2, int y2, int r, int g, int b)
+int png_drawbox(int x1, int y1,int x2, int y2, int r, int g, int b, int scale)
 {
-    png_drawline(x1, y1, x2, y1, r, g, b);
-    png_drawline(x2, y1, x2, y2, r, g, b);
-    png_drawline(x2, y2, x1, y2, r, g, b);
-    png_drawline(x1, y2, x1, y1, r, g, b);
+    png_drawline(x1, y1, x2, y1, r, g, b, scale);
+    png_drawline(x2, y1, x2, y2, r, g, b, scale);
+    png_drawline(x2, y2, x1, y2, r, g, b, scale);
+    png_drawline(x1, y2, x1, y1, r, g, b, scale);
     return 0;
 }
 
-int png_fillbox(int x1, int y1,int x2, int y2, int r, int g, int b)
+int png_fillbox(int x1, int y1,int x2, int y2, int r, int g, int b, int scale)
 {
 
     // printf("png_fillbox(%d, %d, %d, %d, %d, %d, %d)\n", x1, y1, x2, y2, r, g, b);
     for (int i = y1; i < y2; i++) {
-        png_drawline(x1, i, x2, i, r, g, b);
+        png_drawline(x1, i, x2, i, r, g, b, scale);
     }
 }
 
 
+int scale_fillbox(int x1, int y1,int x2, int y2, int r, int g, int b, int scale)
+{
 
+    for (int i = (y1); i < (y2) ; i++) {
+        scale_drawline(x1, i, x2, i, r, g, b, scale);
+    }
+
+}
+
+
+int scale_drawbox(int x1, int y1,int x2, int y2, int r, int g, int b, int scale)
+{
+
+    scale_drawline(x1, y1, x2, y1, r, g, b, scale);
+    scale_drawline(x2, y1, x2, y2, r, g, b, scale);
+    scale_drawline(x2, y2, x1, y2, r, g, b, scale);
+    scale_drawline(x1, y2, x1, y1, r, g, b, scale);
+}
+
+int scale_setpixel(int x, int y, unsigned char r, unsigned char g, unsigned int b, int scale)
+{
+
+    if (x < 0 || x >= (DIM_X)) return 0;
+    if (y < 0 || y >= (DIM_Y)) return 0;
+
+		png_fillbox(x * scale, y * scale, (x+1) * scale, (y+1) * scale, r, g, b, scale);
+
+    return 0;
+}
+
+
+int scale_drawline(int x1, int y1, int x2, int y2, unsigned char r, unsigned char g, unsigned char b, int scale)
+{
+    {
+        int x,y,dx,dy,dx1,dy1,px,py,xe,ye,i;
+        dx=x2-x1;
+        dy=y2-y1;
+        dx1=fabs(dx);
+        dy1=fabs(dy);
+        px=2*dy1-dx1;
+        py=2*dx1-dy1;
+        if(dy1<=dx1)
+        {
+            if(dx>=0)
+            {
+                x=x1;
+                y=y1;
+                xe=x2;
+            }
+            else
+            {
+                x=x2;
+                y=y2;
+                xe=x1;
+            }
+            scale_setpixel(x,y,r,g,b, scale);
+            for(i=0; x<xe; i++)
+            {
+                x=x+1;
+                if(px<0)
+                {
+                    px=px+2*dy1;
+                }
+                else
+                {
+                    if((dx<0 && dy<0) || (dx>0 && dy>0))
+                    {
+                        y=y+1;
+                    }
+                    else
+                    {
+                        y=y-1;
+                    }
+                    px=px+2*(dy1-dx1);
+                }
+
+                scale_setpixel(x,y,r,g,b, scale);
+            }
+        }
+        else
+        {
+            if(dy>=0)
+            {
+                x=x1;
+                y=y1;
+                ye=y2;
+            }
+            else
+            {
+                x=x2;
+                y=y2;
+                ye=y1;
+            }
+            scale_setpixel(x,y,r, g, b, scale);
+            for(i=0; y<ye; i++)
+            {
+                y=y+1;
+                if(py<=0)
+                {
+                    py=py+2*dx1;
+                }
+                else
+                {
+                    if((dx<0 && dy<0) || (dx>0 && dy>0))
+                    {
+                        x=x+1;
+                    }
+                    else
+                    {
+                        x=x-1;
+                    }
+                    py=py+2*(dx1-dy1);
+                }
+                scale_setpixel(x,y,r,g,b, scale);
+            }
+        }
+    }
+}
