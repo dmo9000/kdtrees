@@ -60,8 +60,8 @@ int main(int argc, char *argv[])
 			scale = atoi(argv[8]);			
 			}
 
-    if ((reg_xmin < 20 || reg_xmin > DIM_X) ||
-            (reg_xmin < 20 || reg_xmin > DIM_X)) {
+    if ((reg_xmin < 4 || reg_xmin > DIM_X) ||
+            (reg_xmin < 4 || reg_xmin > DIM_X)) {
         printf("reg_xmin/reg_ymin out of bounds\n");
         exit (1);
     }
@@ -242,7 +242,7 @@ void dump_stack()
 
 void generate_png_data(bool fillboxes, int scale)
 {
-    printf("generate_png_data()\n");
+    //printf("generate_png_data()\n");
     int cr, cg, cb;
     int region_count = extentsOut.size();
     int region_index = 0;
@@ -273,7 +273,6 @@ void generate_png_data(bool fillboxes, int scale)
         }
         region_index++;
     }
-    printf("generate_png_data() ok\n");
     return;
 }
 
@@ -285,19 +284,19 @@ bool write_png_file(char *filename, int scale)
     png_structp png;
     png_infop info;
 
-    printf("open_png_file(%s)\n", filename);
+//    printf("open_png_file(%s)\n", filename);
 
     FILE *fp = fopen(filename, "wb");
     if(!fp) abort();
 
-    printf("open_png_file() ok\n");
+//    printf("open_png_file() ok\n");
 
 
     png = png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
     if (!png) abort();
     info = png_create_info_struct(png);
     if (!info) abort();
-    printf("open_png_file() ok\n");
+//    printf("open_png_file() ok\n");
 
 
     if (setjmp(png_jmpbuf(png))) abort();
